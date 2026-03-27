@@ -1,0 +1,18 @@
+[package]
+name = "fyrox-inventory-free"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Inventory system for Fyrox engine - items, stacking, equipment, scripts (Free version)"
+keywords = ["fyrox", "inventory", "rpg", "game"]
+categories = ["game-development"]
+repository = "https://github.com/youichi-uda/fyrox-inventory-free"
+readme = "README.md"
+
+[dependencies]
+fyrox = "1.0"
+uuid = { version = "1", features = ["v4"] }
+strum = "0.27"
+strum_macros = "0.27"
+fxhash = "0.2.1"
+serde = { version = "1", features = ["derive"] }

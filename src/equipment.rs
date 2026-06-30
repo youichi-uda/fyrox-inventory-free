@@ -189,6 +189,42 @@ impl Equipment {
     pub fn get_equipped(&self, slot_type: EquipmentSlotType) -> Option<&ItemStack> {
         self.find_slot(slot_type)?.item.as_ref()
     }
+
+    /// Sum of weights of every currently equipped item, looked up via `db`.
+    ///
+    /// Items missing from the database contribute zero weight.
+    pub fn total_weight(&self, db: &ItemDatabase) -> f32 {
+        self.slots
+            .iter()
+            .filter_map(|s| s.item.as_ref())
+            .map(|stack| {
+                db.get(stack.item_id)
+                    .map(|def| def.weight * stack.quantity as f32)
+                    .unwrap_or(0.0)
+            })
+            .sum()
+    }
+
+    /// Equips `item_id` into the first compatible slot (in [`EquipmentSlotType::all`]
+    /// iteration order). Returns the displaced item id if a slot was occupied,
+    /// or `None` if the slot was empty.
+    ///
+    /// Returns [`EquipError::IncompatibleSlot`] if no slot accepts the item's
+    /// category, and [`EquipError::SlotNotFound`] if the matching slot type is
+    /// not present in this equipment set.
+    pub fn equip_first_compatible(
+        &mut self,
+        item_id: ItemId,
+        db: &ItemDatabase,
+    ) -> Result<Option<ItemId>, EquipError> {
+        for &slot_type in EquipmentSlotType::all() {
+            if self.can_equip(slot_type, item_id, db) {
+                let previous = self.equip(slot_type, item_id, db)?;
+                return Ok(previous.map(|stack| stack.item_id));
+            }
+        }
+        Err(EquipError::IncompatibleSlot)
+    }
 }
 
 /// Errors that can occur during equip operations.

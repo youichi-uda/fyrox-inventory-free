@@ -428,6 +428,41 @@ fn inventory_drop_all_and_clear() {
     assert_eq!(inv.count_item(1), 0);
 }
 
+// ─── Equipment: total_weight / equip_first_compatible ────────────────────────
+
+#[test]
+fn equipment_total_weight_sums_equipped() {
+    let db = test_db();
+    let mut eq = Equipment::standard();
+    assert_eq!(eq.total_weight(&db), 0.0);
+    eq.equip(EquipmentSlotType::MainHand, 1, &db).unwrap(); // sword 3.5
+    eq.equip(EquipmentSlotType::Head, 4, &db).unwrap(); // helmet 2.0
+    let w = eq.total_weight(&db);
+    assert!((w - 5.5).abs() < 1e-4, "weight was {w}");
+}
+
+#[test]
+fn equipment_equip_first_compatible_picks_first_slot() {
+    let db = test_db();
+    let mut eq = Equipment::standard();
+
+    // Sword is accepted by MainHand (first) and OffHand; should land in MainHand.
+    let displaced = eq.equip_first_compatible(1, &db).unwrap();
+    assert!(displaced.is_none());
+    assert_eq!(eq.get_equipped(EquipmentSlotType::MainHand).unwrap().item_id, 1);
+    assert!(eq.get_equipped(EquipmentSlotType::OffHand).is_none());
+
+    // Equipping another weapon displaces the previous one.
+    let displaced = eq.equip_first_compatible(1, &db).unwrap();
+    assert_eq!(displaced, Some(1));
+
+    // Potion has no compatible slot → IncompatibleSlot.
+    assert_eq!(
+        eq.equip_first_compatible(2, &db),
+        Err(EquipError::IncompatibleSlot)
+    );
+}
+
 // ─── serde round-trip ────────────────────────────────────────────────────────
 
 #[test]

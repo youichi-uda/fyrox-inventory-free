@@ -428,6 +428,29 @@ fn inventory_drop_all_and_clear() {
     assert_eq!(inv.count_item(1), 0);
 }
 
+// ─── Inventory: find / iter_occupied ─────────────────────────────────────────
+
+#[test]
+fn inventory_find_first_with_item() {
+    let mut inv = Inventory::new(5, 5);
+    inv.set_slot(2, Some(ItemStack::new(2, 1)));
+    inv.set_slot(3, Some(ItemStack::new(2, 5)));
+    assert_eq!(inv.find_first_with_item(2), Some(2));
+    assert_eq!(inv.find_first_with_item(999), None);
+}
+
+#[test]
+fn inventory_iter_occupied_skips_empty() {
+    let mut inv = Inventory::new(5, 5);
+    inv.set_slot(1, Some(ItemStack::new(1, 1)));
+    inv.set_slot(4, Some(ItemStack::new(2, 7)));
+    let collected: Vec<(usize, ItemId)> = inv
+        .iter_occupied()
+        .map(|(idx, stack)| (idx, stack.item_id))
+        .collect();
+    assert_eq!(collected, vec![(1, 1), (4, 2)]);
+}
+
 // ─── Equipment: total_weight / equip_first_compatible ────────────────────────
 
 #[test]

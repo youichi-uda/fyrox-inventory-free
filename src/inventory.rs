@@ -268,6 +268,25 @@ impl Inventory {
         self.slots.iter().position(|s| s.is_none())
     }
 
+    /// Returns the index of the first slot containing `item_id`, or `None`
+    /// if no slot holds that item.
+    pub fn find_first_with_item(&self, item_id: ItemId) -> Option<usize> {
+        self.slots.iter().position(|slot| {
+            slot.as_ref()
+                .map(|stack| stack.item_id == item_id)
+                .unwrap_or(false)
+        })
+    }
+
+    /// Returns an iterator over `(slot_index, &ItemStack)` for occupied slots
+    /// only, skipping empty slots.
+    pub fn iter_occupied(&self) -> impl Iterator<Item = (usize, &ItemStack)> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, slot)| slot.as_ref().map(|stack| (idx, stack)))
+    }
+
     /// Returns true if the inventory is completely full.
     pub fn is_full(&self) -> bool {
         self.slots.iter().all(|s| s.is_some())

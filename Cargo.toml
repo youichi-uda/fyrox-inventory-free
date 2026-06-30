@@ -1,6 +1,6 @@
 [package]
 name = "fyrox-inventory-free"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "MIT"
 description = "Inventory system for Fyrox engine - items, stacking, equipment, scripts (Free version)"

@@ -391,6 +391,43 @@ fn equipment_equip_from_inventory_swaps_back() {
     );
 }
 
+// ─── Inventory: drop / clear ─────────────────────────────────────────────────
+
+#[test]
+fn inventory_drop_partial_keeps_remainder() {
+    let db = test_db();
+    let mut inv = Inventory::new(5, 5);
+    inv.add_item(2, 8, &db); // 8 potions in slot 0
+    let dropped = inv.drop_item(0, 3).expect("partial drop returns stack");
+    assert_eq!(dropped.item_id, 2);
+    assert_eq!(dropped.quantity, 3);
+    assert_eq!(inv.count_item(2), 5);
+    assert_eq!(inv.slots[0].as_ref().unwrap().quantity, 5);
+}
+
+#[test]
+fn inventory_drop_all_and_clear() {
+    let db = test_db();
+    let mut inv = Inventory::new(5, 5);
+    inv.add_item(2, 4, &db);
+    inv.add_item(1, 1, &db);
+
+    // qty >= stack quantity empties the slot.
+    let dropped = inv.drop_item(0, 99).expect("drop returns full stack");
+    assert_eq!(dropped.quantity, 4);
+    assert!(inv.slots[0].is_none());
+
+    // Out-of-range slot and qty=0 both return None without mutating.
+    assert!(inv.drop_item(99, 1).is_none());
+    assert!(inv.drop_item(1, 0).is_none());
+    assert_eq!(inv.count_item(1), 1);
+
+    // clear wipes everything.
+    inv.clear();
+    assert!(inv.slots.iter().all(|s| s.is_none()));
+    assert_eq!(inv.count_item(1), 0);
+}
+
 // ─── serde round-trip ────────────────────────────────────────────────────────
 
 #[test]

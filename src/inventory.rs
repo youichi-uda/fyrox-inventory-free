@@ -138,6 +138,36 @@ impl Inventory {
         self.slots.get_mut(index)?.take()
     }
 
+    /// Drops `qty` items from `slot_idx`, returning the dropped stack.
+    ///
+    /// Returns `None` if the slot is empty or out of range. If `qty` is greater
+    /// than or equal to the stack quantity, the whole stack is returned and the
+    /// slot becomes empty. Dropping zero items also returns `None` without
+    /// mutating the slot.
+    pub fn drop_item(&mut self, slot_idx: usize, qty: u32) -> Option<ItemStack> {
+        if qty == 0 {
+            return None;
+        }
+        let slot = self.slots.get_mut(slot_idx)?;
+        let stack = slot.as_mut()?;
+        if qty >= stack.quantity {
+            slot.take()
+        } else {
+            let item_id = stack.item_id;
+            stack.quantity -= qty;
+            Some(ItemStack::new(item_id, qty))
+        }
+    }
+
+    /// Empties every slot in the inventory.
+    ///
+    /// Useful for NewGame+, death-drop, or other inventory wipe semantics.
+    pub fn clear(&mut self) {
+        for slot in self.slots.iter_mut() {
+            *slot = None;
+        }
+    }
+
     /// Sets a slot to a given item stack (replacing whatever was there).
     pub fn set_slot(&mut self, index: usize, stack: Option<ItemStack>) -> InventoryResult {
         if index >= self.slots.len() {

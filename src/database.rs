@@ -1,13 +1,15 @@
 use crate::item::{ItemDefinition, ItemId};
-use fyrox::core::{
-    reflect::prelude::*, type_traits::prelude::*, uuid_provider, visitor::prelude::*,
-};
-use fyrox::resource::{
+use fyrox::asset::{
     io::ResourceIo,
     loader::{BoxedLoaderFuture, LoaderPayload, ResourceLoader},
     state::LoadError,
     ResourceData,
 };
+use fyrox::core::{
+    reflect::prelude::*, type_traits::prelude::*, uuid_provider, visitor::prelude::*,
+    TypeUuidProvider,
+};
+use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fmt,
@@ -15,8 +17,9 @@ use std::{
     sync::Arc,
 };
 
-/// A database of item definitions. Stored as a Fyrox resource (.itemdb files).
-#[derive(Clone, Debug, Default, Visit, Reflect, ComponentProvider)]
+/// A database of item definitions. Stored as a Fyrox resource in human-readable
+/// RON format (`.itemdb` files).
+#[derive(Clone, Debug, Default, Visit, Reflect, Serialize, Deserialize, ComponentProvider)]
 pub struct ItemDatabase {
     /// All item definitions in this database.
     #[reflect(display_name = "Items")]
@@ -78,9 +81,9 @@ impl ResourceData for ItemDatabase {
     }
 
     fn save(&mut self, path: &Path) -> Result<(), Box<dyn Error>> {
-        let mut visitor = Visitor::new();
-        self.visit("ItemDatabase", &mut visitor)?;
-        visitor.save_ascii_to_file(path)?;
+        let config = ron::ser::PrettyConfig::default();
+        let serialized = ron::ser::to_string_pretty(self, config)?;
+        std::fs::write(path, serialized)?;
         Ok(())
     }
 
@@ -96,14 +99,16 @@ impl ResourceData for ItemDatabase {
 /// Error type for item database loading.
 #[derive(Debug)]
 pub enum ItemDatabaseLoadError {
-    Visit(VisitError),
+    /// RON (de)serialization failure.
+    Ron(String),
+    /// I/O failure while reading the file, or invalid UTF-8 contents.
     Io(String),
 }
 
 impl fmt::Display for ItemDatabaseLoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Visit(e) => write!(f, "Visit error: {:?}", e),
+            Self::Ron(e) => write!(f, "RON error: {}", e),
             Self::Io(e) => write!(f, "IO error: {}", e),
         }
     }
@@ -111,7 +116,7 @@ impl fmt::Display for ItemDatabaseLoadError {
 
 impl Error for ItemDatabaseLoadError {}
 
-/// Resource loader for `.itemdb` files.
+/// Resource loader for `.itemdb` files (RON format).
 pub struct ItemDatabaseLoader;
 
 impl ResourceLoader for ItemDatabaseLoader {
@@ -120,7 +125,7 @@ impl ResourceLoader for ItemDatabaseLoader {
     }
 
     fn data_type_uuid(&self) -> uuid::Uuid {
-        <ItemDatabase as fyrox_core::TypeUuidProvider>::type_uuid()
+        <ItemDatabase as TypeUuidProvider>::type_uuid()
     }
 
     fn load(&self, path: PathBuf, io: Arc<dyn ResourceIo>) -> BoxedLoaderFuture {
@@ -130,13 +135,11 @@ impl ResourceLoader for ItemDatabaseLoader {
                 .await
                 .map_err(|e| LoadError::new(ItemDatabaseLoadError::Io(e.to_string())))?;
 
-            let mut visitor = Visitor::load_from_memory(&data)
-                .map_err(|e| LoadError::new(ItemDatabaseLoadError::Visit(e)))?;
+            let text = String::from_utf8(data)
+                .map_err(|e| LoadError::new(ItemDatabaseLoadError::Io(e.to_string())))?;
 
-            let mut database = ItemDatabase::default();
-            database
-                .visit("ItemDatabase", &mut visitor)
-                .map_err(|e| LoadError::new(ItemDatabaseLoadError::Visit(e)))?;
+            let database: ItemDatabase = ron::from_str(&text)
+                .map_err(|e| LoadError::new(ItemDatabaseLoadError::Ron(e.to_string())))?;
 
             Ok(LoaderPayload::new(database))
         })

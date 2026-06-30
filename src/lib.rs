@@ -5,11 +5,12 @@
 //! ## Features
 //!
 //! - **Item Definitions**: Items with name, description, icon, rarity, category, weight, value, tags
-//! - **Item Database Resource**: Load/save item databases as `.itemdb` files
-//! - **Inventory Grid**: Fixed-size inventory with stacking, splitting, merging, sorting
-//! - **Equipment System**: Named equipment slots with category validation
-//! - **Scripts**: `InventoryHolder` and `ItemPickup` scripts for scene nodes
-//! - **Save/Load**: All types derive `Visit` for serialization
+//! - **Item Database Resource**: Load/save item databases as `.itemdb` files (RON format)
+//! - **Inventory Grid**: Fixed-size inventory with stacking, splitting, merging, and multi-key
+//!   sorting (id, name, rarity, category, value), plus category/tag queries
+//! - **Equipment System**: Named equipment slots with category validation and auto-swap back to inventory
+//! - **Scripts**: `InventoryHolder` and `ItemPickup` (with interaction radius + auto-stack) scripts
+//! - **Save/Load**: All data types derive both `Visit` and `serde` `Serialize`/`Deserialize`
 //!
 //! ## Pro Version
 //!

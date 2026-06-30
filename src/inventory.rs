@@ -1,6 +1,22 @@
 use crate::database::ItemDatabase;
-use crate::item::{ItemId, ItemStack};
+use crate::item::{ItemCategory, ItemId, ItemStack};
 use fyrox::core::{reflect::prelude::*, type_traits::prelude::*, uuid_provider, visitor::prelude::*};
+use serde::{Deserialize, Serialize};
+
+/// Sort key for [`Inventory::sort_by`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortKey {
+    /// Sort by item id (ascending).
+    Id,
+    /// Sort by item name (alphabetical, ascending).
+    Name,
+    /// Sort by rarity. Highest rarity (Legendary) first.
+    Rarity,
+    /// Sort by category (in declaration order).
+    Category,
+    /// Sort by base value. Most valuable first.
+    Value,
+}
 
 /// Result of an inventory operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,7 +36,7 @@ pub enum InventoryResult {
 }
 
 /// A fixed-size inventory grid. Each slot can hold one `ItemStack` or be empty.
-#[derive(Clone, Debug, Default, Visit, Reflect, ComponentProvider)]
+#[derive(Clone, Debug, Default, Visit, Reflect, Serialize, Deserialize, ComponentProvider)]
 pub struct Inventory {
     /// The slots in this inventory. `None` means the slot is empty.
     #[reflect(display_name = "Slots")]
@@ -50,7 +66,7 @@ impl Inventory {
     /// Returns the number of rows based on columns.
     pub fn rows(&self) -> usize {
         let cols = self.columns.max(1) as usize;
-        (self.slots.len() + cols - 1) / cols
+        self.slots.len().div_ceil(cols)
     }
 
     /// Adds items to the inventory, filling existing stacks first, then empty slots.
@@ -227,22 +243,102 @@ impl Inventory {
         self.slots.iter().all(|s| s.is_some())
     }
 
-    /// Sorts the inventory by item_id, grouping same items together and merging stacks.
+    /// Returns the indices of all occupied slots whose item belongs to `category`.
+    pub fn slots_in_category(&self, category: ItemCategory, db: &ItemDatabase) -> Vec<usize> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, slot)| {
+                let stack = slot.as_ref()?;
+                let def = db.get(stack.item_id)?;
+                (def.category == category).then_some(idx)
+            })
+            .collect()
+    }
+
+    /// Returns the total quantity of items in the given category.
+    pub fn count_in_category(&self, category: ItemCategory, db: &ItemDatabase) -> u32 {
+        self.slots_in_category(category, db)
+            .iter()
+            .filter_map(|&idx| self.slots[idx].as_ref())
+            .map(|s| s.quantity)
+            .sum()
+    }
+
+    /// Returns the indices of all occupied slots whose item carries the given tag.
+    pub fn slots_with_tag(&self, tag: &str, db: &ItemDatabase) -> Vec<usize> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, slot)| {
+                let stack = slot.as_ref()?;
+                let def = db.get(stack.item_id)?;
+                def.tags.iter().any(|t| t == tag).then_some(idx)
+            })
+            .collect()
+    }
+
+    /// Sorts the inventory by item id, grouping same items together and merging stacks.
+    ///
+    /// This is a convenience wrapper around [`Inventory::sort_by`] with [`SortKey::Id`].
     pub fn sort(&mut self, db: &ItemDatabase) {
-        // Collect all items.
+        self.sort_by(SortKey::Id, db);
+    }
+
+    /// Sorts the inventory by rarity (highest first), merging stacks.
+    ///
+    /// Convenience wrapper around [`Inventory::sort_by`] with [`SortKey::Rarity`].
+    pub fn sort_by_rarity(&mut self, db: &ItemDatabase) {
+        self.sort_by(SortKey::Rarity, db);
+    }
+
+    /// Sorts the inventory by the given [`SortKey`], grouping identical items
+    /// together and re-stacking them according to each item's `max_stack_size`.
+    ///
+    /// Items missing from the database are sorted last.
+    pub fn sort_by(&mut self, key: SortKey, db: &ItemDatabase) {
+        // Collect all items, merging duplicates.
         let mut items: Vec<(ItemId, u32)> = Vec::new();
-        for slot in self.slots.iter() {
-            if let Some(stack) = slot {
-                if let Some(entry) = items.iter_mut().find(|(id, _)| *id == stack.item_id) {
-                    entry.1 += stack.quantity;
-                } else {
-                    items.push((stack.item_id, stack.quantity));
-                }
+        for stack in self.slots.iter().flatten() {
+            if let Some(entry) = items.iter_mut().find(|(id, _)| *id == stack.item_id) {
+                entry.1 += stack.quantity;
+            } else {
+                items.push((stack.item_id, stack.quantity));
             }
         }
 
-        // Sort by item_id.
-        items.sort_by_key(|(id, _)| *id);
+        // Sort according to the requested key. Ties fall back to item id for
+        // deterministic ordering.
+        items.sort_by(|(a, _), (b, _)| {
+            let da = db.get(*a);
+            let db_def = db.get(*b);
+            let ordering = match key {
+                SortKey::Id => a.cmp(b),
+                SortKey::Name => {
+                    let na = da.map(|d| d.name.as_str()).unwrap_or("");
+                    let nb = db_def.map(|d| d.name.as_str()).unwrap_or("");
+                    na.cmp(nb)
+                }
+                SortKey::Rarity => {
+                    // Highest rarity first.
+                    let ra = da.map(|d| d.rarity).unwrap_or_default();
+                    let rb = db_def.map(|d| d.rarity).unwrap_or_default();
+                    rb.cmp(&ra)
+                }
+                SortKey::Category => {
+                    let ca = da.map(|d| d.category).unwrap_or_default();
+                    let cb = db_def.map(|d| d.category).unwrap_or_default();
+                    ca.cmp(&cb)
+                }
+                SortKey::Value => {
+                    // Most valuable first.
+                    let va = da.map(|d| d.base_value).unwrap_or(0);
+                    let vb = db_def.map(|d| d.base_value).unwrap_or(0);
+                    vb.cmp(&va)
+                }
+            };
+            ordering.then_with(|| a.cmp(b))
+        });
 
         // Clear and refill.
         for slot in self.slots.iter_mut() {

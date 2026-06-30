@@ -1,6 +1,8 @@
 use crate::database::ItemDatabase;
+use crate::inventory::Inventory;
 use crate::item::{ItemCategory, ItemId, ItemStack};
 use fyrox::core::{reflect::prelude::*, type_traits::prelude::*, uuid_provider, visitor::prelude::*};
+use serde::{Deserialize, Serialize};
 use strum_macros::{AsRefStr, EnumString, VariantNames};
 
 /// Equipment slot type. Each slot accepts specific item categories.
@@ -14,6 +16,8 @@ use strum_macros::{AsRefStr, EnumString, VariantNames};
     Hash,
     Visit,
     Reflect,
+    Serialize,
+    Deserialize,
     AsRefStr,
     EnumString,
     VariantNames,
@@ -60,7 +64,7 @@ impl EquipmentSlotType {
 }
 
 /// A single equipment slot holding an optional item.
-#[derive(Clone, Debug, Default, Visit, Reflect, ComponentProvider)]
+#[derive(Clone, Debug, Default, Visit, Reflect, Serialize, Deserialize, ComponentProvider)]
 pub struct EquipmentSlot {
     /// The type of this slot (determines accepted categories).
     #[reflect(display_name = "Slot Type")]
@@ -74,7 +78,7 @@ pub struct EquipmentSlot {
 uuid_provider!(EquipmentSlot = "c3d4e5f6-a7b8-9012-cdef-123456789012");
 
 /// Equipment system with named slots.
-#[derive(Clone, Debug, Default, Visit, Reflect, ComponentProvider)]
+#[derive(Clone, Debug, Default, Visit, Reflect, Serialize, Deserialize, ComponentProvider)]
 pub struct Equipment {
     #[reflect(display_name = "Slots")]
     pub slots: Vec<EquipmentSlot>,
@@ -142,6 +146,40 @@ impl Equipment {
         Ok(previous)
     }
 
+    /// Equips one unit of `item_id` taken from `inventory`, automatically returning
+    /// any previously equipped item back into the inventory (swap semantics).
+    ///
+    /// On success the item is removed from the inventory and the previously equipped
+    /// item (if any) is added back. Returns an error without mutating anything if the
+    /// item is not present in the inventory or is incompatible with the slot.
+    pub fn equip_from_inventory(
+        &mut self,
+        slot_type: EquipmentSlotType,
+        item_id: ItemId,
+        inventory: &mut Inventory,
+        db: &ItemDatabase,
+    ) -> Result<(), EquipError> {
+        if !self.can_equip(slot_type, item_id, db) {
+            return Err(EquipError::IncompatibleSlot);
+        }
+        if !inventory.has_item(item_id, 1) {
+            return Err(EquipError::NotInInventory);
+        }
+        // Ensure the slot exists before mutating the inventory.
+        if self.find_slot(slot_type).is_none() {
+            return Err(EquipError::SlotNotFound);
+        }
+
+        inventory.remove_item(item_id, 1);
+        let previous = self.equip(slot_type, item_id, db)?;
+
+        // Return the previously equipped item to the inventory.
+        if let Some(prev) = previous {
+            inventory.add_item(prev.item_id, prev.quantity, db);
+        }
+        Ok(())
+    }
+
     /// Unequips an item from the given slot. Returns the item that was there.
     pub fn unequip(&mut self, slot_type: EquipmentSlotType) -> Option<ItemStack> {
         self.find_slot_mut(slot_type)?.item.take()
@@ -156,6 +194,24 @@ impl Equipment {
 /// Errors that can occur during equip operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EquipError {
+    /// No slot of the requested type exists in this equipment set.
     SlotNotFound,
+    /// The item's category is not accepted by the target slot.
     IncompatibleSlot,
+    /// The item to equip was not present in the source inventory.
+    NotInInventory,
 }
+
+impl std::fmt::Display for EquipError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SlotNotFound => write!(f, "no equipment slot of the requested type exists"),
+            Self::IncompatibleSlot => {
+                write!(f, "item category is not accepted by the target slot")
+            }
+            Self::NotInInventory => write!(f, "item is not present in the source inventory"),
+        }
+    }
+}
+
+impl std::error::Error for EquipError {}

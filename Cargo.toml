@@ -16,3 +16,4 @@ strum = "0.27"
 strum_macros = "0.27"
 fxhash = "0.2.1"
 serde = { version = "1", features = ["derive"] }
+ron = "0.8"

@@ -2,10 +2,14 @@ use fyrox::core::{
     reflect::prelude::*, type_traits::prelude::*, uuid_provider, visitor::prelude::*,
 };
 use fyrox::resource::texture::TextureResource;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use strum_macros::{AsRefStr, EnumString, VariantNames};
 
 /// Rarity level of an item, affects display color and sorting.
+///
+/// The variant order (`Common` < `Legendary`) defines the natural ordering used
+/// by [`crate::inventory::Inventory::sort_by`] when sorting by rarity.
 #[derive(
     Copy,
     Clone,
@@ -13,9 +17,13 @@ use strum_macros::{AsRefStr, EnumString, VariantNames};
     Default,
     PartialEq,
     Eq,
+    PartialOrd,
+    Ord,
     Hash,
     Visit,
     Reflect,
+    Serialize,
+    Deserialize,
     AsRefStr,
     EnumString,
     VariantNames,
@@ -37,9 +45,13 @@ pub enum ItemRarity {
     Default,
     PartialEq,
     Eq,
+    PartialOrd,
+    Ord,
     Hash,
     Visit,
     Reflect,
+    Serialize,
+    Deserialize,
     AsRefStr,
     EnumString,
     VariantNames,
@@ -62,7 +74,7 @@ pub enum ItemCategory {
 pub type ItemId = u64;
 
 /// Static definition of an item type. This is the "blueprint" - instances reference this by id.
-#[derive(Clone, Debug, Default, Visit, Reflect, ComponentProvider)]
+#[derive(Clone, Debug, Default, Visit, Reflect, Serialize, Deserialize, ComponentProvider)]
 pub struct ItemDefinition {
     /// Unique numeric identifier for this item definition.
     #[reflect(display_name = "Item ID")]
@@ -118,7 +130,9 @@ impl fmt::Display for ItemDefinition {
 }
 
 /// A runtime instance of an item in an inventory slot.
-#[derive(Clone, Debug, Default, Visit, Reflect, ComponentProvider)]
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Visit, Reflect, Serialize, Deserialize, ComponentProvider,
+)]
 pub struct ItemStack {
     /// References the item definition by its ID.
     #[reflect(display_name = "Item ID")]
